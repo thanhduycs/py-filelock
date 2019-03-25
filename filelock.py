@@ -32,6 +32,7 @@ A platform independent file lock that supports the with-statement.
 # ------------------------------------------------
 import logging
 import os
+import errno
 import threading
 import time
 try:
@@ -343,18 +344,14 @@ class WindowsFileLock(BaseFileLock):
 
     def _acquire(self):
         open_mode = os.O_RDWR | os.O_CREAT | os.O_TRUNC
+        fd = os.open(self._lock_file, open_mode)
 
         try:
-            fd = os.open(self._lock_file, open_mode)
-        except OSError:
-            raise
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except (IOError, OSError):
+            os.close(fd)
         else:
-            try:
-                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-            except (IOError, OSError):
-                os.close(fd)
-            else:
-                self._lock_file_fd = fd
+            self._lock_file_fd = fd
         return None
 
     def _release(self):
@@ -414,8 +411,9 @@ class SoftFileLock(BaseFileLock):
         open_mode = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_TRUNC
         try:
             fd = os.open(self._lock_file, open_mode)
-        except (IOError, OSError):
-            pass
+        except OSError as err:
+            if err.errno != errno.EEXIST:
+                raise
         else:
             self._lock_file_fd = fd
         return None
